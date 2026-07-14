@@ -1,10 +1,17 @@
 import logging
+import asyncio
+import sys
 from datetime import datetime, timedelta
 import calendar
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from config import BOT_TOKEN, ADMIN_ID
+import os
+
+# Читаем токен из переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", 0))
+
 from database import init_db, save_user, get_user, get_all_users, get_total_users, get_active_users_today, get_active_users_week
 from database import save_workout, get_today_workout, mark_workout_done, get_user_workouts, get_user_workouts_by_month
 
@@ -83,8 +90,7 @@ def get_workout(day):
     return WORKOUTS[(day - 1) % len(WORKOUTS)]
 
 def delete_user(user_id):
-    from database import DB_NAME
-    with sqlite3.connect(DB_NAME) as conn:
+    with sqlite3.connect("fitness_bot.db") as conn:
         cursor = conn.cursor()
         cursor.execute("DELETE FROM users WHERE user_id = ?", (user_id,))
         cursor.execute("DELETE FROM workouts WHERE user_id = ?", (user_id,))
@@ -182,9 +188,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     clear_reg_data(user_id)
     set_reg_data(user_id, {'step': 'name'})
-    # Сначала приветствие
     await update.message.reply_text(get_welcome_text())
-    # Потом вопрос о имени
     await update.message.reply_text("Как вас зовут?")
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -358,6 +362,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ========== ЗАПУСК ==========
 
 def main():
+    if not BOT_TOKEN:
+        print("❌ Ошибка: BOT_TOKEN не найден. Убедитесь, что переменная окружения BOT_TOKEN установлена.")
+        return
+    
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
