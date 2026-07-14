@@ -1,4 +1,5 @@
 import os
+import asyncio
 import logging
 from datetime import datetime, timedelta
 import calendar
@@ -8,7 +9,7 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from database import init_db, save_user, get_user, get_all_users, get_total_users, get_active_users_today, get_active_users_week
 from database import save_workout, get_today_workout, mark_workout_done, get_user_workouts, get_user_workouts_by_month
 
-# ===== ЧИТАЕМ ТОКЕН ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ =====
+# === ТОКЕН ИЗ ОКРУЖЕНИЯ ===
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 
@@ -17,11 +18,10 @@ if not BOT_TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 
-# ===== ПРИВЕТСТВИЕ =====
+# === ПРИВЕТСТВИЕ ===
 def get_welcome_text():
     return "Привет! Это твой тренер Энтони Тренболони! Ну что приступим к тренировкам?"
 
-# ===== ГЛОБАЛЬНОЕ ХРАНИЛИЩЕ ДЛЯ РЕГИСТРАЦИИ =====
 user_reg_data = {}
 
 def get_reg_data(user_id):
@@ -34,8 +34,7 @@ def clear_reg_data(user_id):
     if user_id in user_reg_data:
         del user_reg_data[user_id]
 
-# ========== КЛАВИАТУРЫ ==========
-
+# === КЛАВИАТУРЫ ===
 def get_client_keyboard():
     keyboard = [
         ["🏋️ Тренировка сегодня", "📅 Календарь"],
@@ -50,40 +49,18 @@ def get_admin_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# ========== ТРЕНИРОВКИ ==========
-
+# === ТРЕНИРОВКИ (10 вариантов) ===
 WORKOUTS = [
-    {"name": "ГРУДЬ + БИЦЕПС", "muscles": "Грудные, Бицепс", "ex": ["Жим штанги лёжа 4x10", "Разводка гантелей 4x12", "Сведение в кроссовере 3x15", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Бег 20 мин"]},
-    {"name": "СПИНА + ПЛЕЧИ", "muscles": "Спина, Плечи", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Гиперэкстензия 3x15", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Велотренажёр 25 мин"]},
-    {"name": "НОГИ + ПРЕСС", "muscles": "Ноги, Пресс", "ex": ["Приседания 4x12", "Жим ногами 4x15", "Выпады 3x12", "Подъём ног 3x15", "Скручивания 3x20", "Бег 15 мин"]},
-    {"name": "ГРУДЬ + ТРИЦЕПС", "muscles": "Грудные, Трицепс", "ex": ["Жим гантелей на наклонной 4x10", "Отжимания на брусьях 3x12", "Кроссовер 3x15", "Французский жим 4x10", "Тяга блока вниз 3x12", "Скакалка 15 мин"]},
-    {"name": "СПИНА + БИЦЕПС", "muscles": "Спина, Бицепс", "ex": ["Становая тяга 4x8", "Тяга гантели одной рукой 4x12", "Пуловер 3x12", "Подъём штанги на бицепс 4x10", "Сгибания с гантелями 3x12", "Бег 25 мин"]},
-    {"name": "ПЛЕЧИ + ТРАПЕЦИИ", "muscles": "Плечи, Трапеции", "ex": ["Армейский жим 4x10", "Разводка в стороны 4x12", "Подъём перед собой 3x12", "Шраги 4x15", "Тяга к подбородку 3x12", "Эллипсоид 20 мин"]},
-    {"name": "НОГИ + ЯГОДИЦЫ", "muscles": "Ноги, Ягодицы", "ex": ["Приседания с гантелями 4x15", "Румынская тяга 4x12", "Выпады назад 3x12", "Ягодичный мостик 4x15", "Махи ногой 3x15", "Ходьба 30 мин"]},
-    {"name": "ГРУДЬ + ПЛЕЧИ", "muscles": "Грудные, Плечи", "ex": ["Жим штанги лёжа 4x8", "Разводка 4x10", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Подъём перед собой 3x12", "Бег 20 мин"]},
-    {"name": "СПИНА + ПРЕСС", "muscles": "Спина, Пресс", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Горизонтальная тяга 3x12", "Скручивания 4x20", "Подъём ног 3x15", "Велотренажёр 25 мин"]},
-    {"name": "НОГИ + РУКИ", "muscles": "Ноги, Руки", "ex": ["Приседания 4x10", "Жим ногами 4x12", "Сгибание ног 3x15", "Подъём на бицепс 4x10", "Французский жим 4x10", "Бег 20 мин"]},
-    {"name": "ГРУДЬ + СПИНА", "muscles": "Грудные, Спина", "ex": ["Жим штанги лёжа 4x8", "Тяга штанги 4x8", "Разводка 4x10", "Пуловер 3x12", "Гиперэкстензия 3x15", "Скакалка 20 мин"]},
-    {"name": "ПЛЕЧИ + РУКИ", "muscles": "Плечи, Руки", "ex": ["Армейский жим 4x10", "Разводка 4x12", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Французский жим 4x10", "Бег 25 мин"]},
-    {"name": "НОГИ + ПЛЕЧИ", "muscles": "Ноги, Плечи", "ex": ["Приседания 4x15", "Выпады 3x12", "Жим ногами 4x12", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Велотренажёр 30 мин"]},
-    {"name": "ГРУДЬ + БИЦЕПС + ПРЕСС", "muscles": "Грудные, Бицепс, Пресс", "ex": ["Жим гантелей 4x10", "Сведение в кроссовере 3x15", "Подъём штанги на бицепс 4x10", "Скручивания 4x20", "Подъём ног 3x15", "Бег 15 мин"]},
-    {"name": "СПИНА + ТРИЦЕПС", "muscles": "Спина, Трицепс", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Французский жим 4x10", "Тяга блока вниз 3x12", "Разгибание с гантелей 3x12", "Эллипсоид 25 мин"]},
-    {"name": "НОГИ + БИЦЕПС", "muscles": "Ноги, Бицепс", "ex": ["Приседания 4x12", "Жим ногами 4x15", "Сгибание ног 3x15", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Бег 20 мин"]},
-    {"name": "ГРУДЬ + ТРИЦЕПС + ПЛЕЧИ", "muscles": "Грудные, Трицепс, Плечи", "ex": ["Жим штанги лёжа 4x8", "Отжимания на брусьях 3x12", "Французский жим 4x10", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Скакалка 20 мин"]},
-    {"name": "СПИНА + ПЛЕЧИ + ТРАПЕЦИИ", "muscles": "Спина, Плечи, Трапеции", "ex": ["Становая тяга 4x8", "Тяга штанги 4x10", "Армейский жим 4x10", "Шраги 4x15", "Тяга к подбородку 3x12", "Велотренажёр 30 мин"]},
-    {"name": "ВСЁ ТЕЛО (ФУЛБАДИ)", "muscles": "Все группы мышц", "ex": ["Приседания 4x12", "Жим штанги 4x10", "Тяга штанги 4x10", "Армейский жим 4x10", "Становая тяга 4x8", "Бег 15 мин"]},
-    {"name": "НОГИ + СПИНА", "muscles": "Ноги, Спина", "ex": ["Приседания 4x12", "Румынская тяга 4x10", "Выпады 3x12", "Тяга штанги 4x10", "Скручивания 4x20", "Бег 20 мин"]},
-    {"name": "ГРУДЬ + РУКИ", "muscles": "Грудные, Руки", "ex": ["Жим гантелей 4x10", "Разводка 4x12", "Подъём штанги на бицепс 4x10", "Французский жим 4x10", "Молотки 3x12", "Скакалка 15 мин"]},
-    {"name": "СПИНА + РУКИ", "muscles": "Спина, Руки", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Подъём штанги на бицепс 4x10", "Тяга блока вниз 3x12", "Разгибание с гантелей 3x12", "Бег 25 мин"]},
-    {"name": "ПЛЕЧИ + ПРЕСС", "muscles": "Плечи, Пресс", "ex": ["Жим гантелей сидя 4x10", "Разводка в стороны 4x12", "Подъём перед собой 3x12", "Скручивания 4x20", "Подъём ног 3x15", "Велотренажёр 20 мин"]},
-    {"name": "НОГИ + ГРУДЬ", "muscles": "Ноги, Грудные", "ex": ["Приседания 4x12", "Выпады 3x12", "Жим ногами 4x15", "Жим гантелей 4x10", "Разводка 4x12", "Бег 20 мин"]},
-    {"name": "СПИНА + ГРУДЬ + ПЛЕЧИ", "muscles": "Спина, Грудные, Плечи", "ex": ["Жим штанги 4x8", "Тяга штанги 4x8", "Разводка 4x10", "Армейский жим 4x10", "Шраги 4x15", "Скакалка 25 мин"]},
-    {"name": "НОГИ + СПИНА + БИЦЕПС", "muscles": "Ноги, Спина, Бицепс", "ex": ["Приседания 4x10", "Румынская тяга 4x10", "Тяга штанги 4x10", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Велотренажёр 30 мин"]},
-    {"name": "ГРУДЬ + ПЛЕЧИ + ТРИЦЕПС", "muscles": "Грудные, Плечи, Трицепс", "ex": ["Жим штанги 4x8", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Французский жим 4x10", "Тяга блока вниз 3x12", "Бег 20 мин"]},
-    {"name": "СПИНА + ПРЕСС + НОГИ", "muscles": "Спина, Пресс, Ноги", "ex": ["Тяга штанги 4x10", "Гиперэкстензия 3x15", "Приседания 4x12", "Выпады 3x12", "Скручивания 4x20", "Эллипсоид 25 мин"]},
-    {"name": "ВСЁ ТЕЛО 2", "muscles": "Все группы мышц", "ex": ["Становая тяга 4x8", "Жим гантелей 4x10", "Тяга гантели одной рукой 4x12", "Армейский жим 4x10", "Приседания 4x12", "Бег 15 мин"]},
-    {"name": "НОГИ + ЯГОДИЦЫ + ПРЕСС", "muscles": "Ноги, Ягодицы, Пресс", "ex": ["Приседания 4x12", "Румынская тяга 4x10", "Ягодичный мостик 4x15", "Выпады 3x12", "Скручивания 4x20", "Ходьба 30 мин"]},
-    {"name": "ГРУДЬ + СПИНА + РУКИ", "muscles": "Грудные, Спина, Руки", "ex": ["Жим штанги 4x8", "Тяга штанги 4x8", "Разводка 4x10", "Подъём штанги на бицепс 4x10", "Французский жим 4x10", "Скакалка 20 мин"]}
+    {"name": "ГРУДЬ + БИЦЕПС", "muscles": "Грудные, Бицепс", "ex": ["Жим штанги 4x10", "Разводка гантелей 4x12", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Бег 20 мин"]},
+    {"name": "СПИНА + ПЛЕЧИ", "muscles": "Спина, Плечи", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Велотренажёр 25 мин"]},
+    {"name": "НОГИ + ПРЕСС", "muscles": "Ноги, Пресс", "ex": ["Приседания 4x12", "Жим ногами 4x15", "Подъём ног 3x15", "Скручивания 3x20", "Бег 15 мин"]},
+    {"name": "ГРУДЬ + ТРИЦЕПС", "muscles": "Грудные, Трицепс", "ex": ["Жим гантелей на наклонной 4x10", "Отжимания на брусьях 3x12", "Французский жим 4x10", "Тяга блока вниз 3x12", "Скакалка 15 мин"]},
+    {"name": "СПИНА + БИЦЕПС", "muscles": "Спина, Бицепс", "ex": ["Становая тяга 4x8", "Тяга гантели одной рукой 4x12", "Подъём штанги на бицепс 4x10", "Сгибания с гантелями 3x12", "Бег 25 мин"]},
+    {"name": "ПЛЕЧИ + ТРАПЕЦИИ", "muscles": "Плечи, Трапеции", "ex": ["Армейский жим 4x10", "Разводка в стороны 4x12", "Шраги 4x15", "Тяга к подбородку 3x12", "Эллипсоид 20 мин"]},
+    {"name": "НОГИ + ЯГОДИЦЫ", "muscles": "Ноги, Ягодицы", "ex": ["Приседания с гантелями 4x15", "Румынская тяга 4x12", "Выпады назад 3x12", "Ягодичный мостик 4x15", "Ходьба 30 мин"]},
+    {"name": "ГРУДЬ + ПЛЕЧИ", "muscles": "Грудные, Плечи", "ex": ["Жим штанги 4x8", "Разводка 4x10", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Бег 20 мин"]},
+    {"name": "СПИНА + ПРЕСС", "muscles": "Спина, Пресс", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Скручивания 4x20", "Подъём ног 3x15", "Велотренажёр 25 мин"]},
+    {"name": "НОГИ + РУКИ", "muscles": "Ноги, Руки", "ex": ["Приседания 4x10", "Жим ногами 4x12", "Подъём на бицепс 4x10", "Французский жим 4x10", "Бег 20 мин"]}
 ]
 
 def get_workout(day):
@@ -97,7 +74,7 @@ def delete_user(user_id):
         conn.commit()
     return True
 
-# ========== ПОКАЗ ТРЕНИРОВКИ ==========
+# === ОСНОВНЫЕ ФУНКЦИИ ===
 
 async def show_workout(message, user_id, date_str=None):
     user = get_user(user_id)
@@ -107,12 +84,14 @@ async def show_workout(message, user_id, date_str=None):
     if date_str:
         day = int(date_str.split("-")[2])
         w = get_workout(day)
-        text = f"🏋️ *{w['name']}*\n\n🎯 *{w['muscles']}*\n\n📋 Упражнения:\n" + "\n".join(f"• {ex}" for ex in w['ex'])
-        workout_id = save_workout(user_id, text, date_str)
     else:
         today = datetime.now().day
         w = get_workout(today)
-        text = f"🏋️ *{w['name']}*\n\n🎯 *{w['muscles']}*\n\n📋 Упражнения:\n" + "\n".join(f"• {ex}" for ex in w['ex'])
+    text = f"🏋️ *{w['name']}*\n\n🎯 *{w['muscles']}*\n\n📋 Упражнения:\n" + "\n".join(f"• {ex}" for ex in w['ex'])
+    
+    if date_str:
+        workout_id = save_workout(user_id, text, date_str)
+    else:
         existing = get_today_workout(user_id)
         if existing:
             workout_id, _, completed = existing
@@ -121,10 +100,9 @@ async def show_workout(message, user_id, date_str=None):
                 return
         else:
             workout_id = save_workout(user_id, text)
+    
     keyboard = [[InlineKeyboardButton("✅ Выполнено!", callback_data=f"complete_{workout_id}")]]
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
-
-# ========== КАЛЕНДАРЬ ==========
 
 async def show_calendar(message, user_id, year, month):
     workouts = get_user_workouts_by_month(user_id, year, month)
@@ -160,8 +138,6 @@ async def show_calendar(message, user_id, year, month):
     keyboard.append([InlineKeyboardButton("🔙 Меню", callback_data="main_menu")])
     await message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
 
-# ========== ПОКАЗ КЛИЕНТОВ ==========
-
 async def show_clients(message):
     users = get_all_users()
     if not users:
@@ -177,7 +153,7 @@ async def show_clients(message):
         parse_mode="Markdown"
     )
 
-# ========== РЕГИСТРАЦИЯ И ПРИВЕТСТВИЕ ==========
+# === РЕГИСТРАЦИЯ ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -257,8 +233,6 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except:
             await update.message.reply_text("Введите число.")
 
-# ========== ОБРАБОТЧИК КНОПОК ==========
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -308,7 +282,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("✅ Выполнено! 🎉")
         return
     
-    # === РЕГИСТРАЦИЯ: ВЫБОР ЦЕЛИ ===
     if data.startswith("goal_"):
         goal = data.replace("goal_", "")
         reg_data = get_reg_data(user_id)
@@ -325,7 +298,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("Выберите уровень подготовки:", reply_markup=keyboard)
         return
     
-    # === РЕГИСТРАЦИЯ: ВЫБОР УРОВНЯ ===
     if data.startswith("level_"):
         level = data.replace("level_", "")
         reg_data = get_reg_data(user_id)
@@ -359,21 +331,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(get_welcome_text(), reply_markup=kb)
         return
 
-# ========== ЗАПУСК ==========
-
+# === ЗАПУСК ===
 def main():
     if not BOT_TOKEN:
-        print("❌ Ошибка: BOT_TOKEN не найден. Убедитесь, что переменная окружения BOT_TOKEN установлена.")
+        print("❌ Ошибка: BOT_TOKEN не найден")
         return
-    
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     print("🚀 Бот запущен!")
-    app.run_polling(allowed_updates=[])
+    app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    main()
