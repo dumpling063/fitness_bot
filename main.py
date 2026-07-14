@@ -1,7 +1,6 @@
 import os
-import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 import calendar
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup
@@ -9,12 +8,13 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from database import init_db, save_user, get_user, get_all_users, get_total_users, get_active_users_today, get_active_users_week
 from database import save_workout, get_today_workout, mark_workout_done, get_user_workouts, get_user_workouts_by_month
 
-# === ТОКЕН ИЗ ОКРУЖЕНИЯ ===
+# === ТОКЕН ===
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 
 if not BOT_TOKEN:
-    raise ValueError("BOT_TOKEN не найден! Добавьте переменную BOT_TOKEN на Render.")
+    print("❌ BOT_TOKEN не найден")
+    exit(1)
 
 logging.basicConfig(level=logging.INFO)
 
@@ -49,7 +49,7 @@ def get_admin_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# === ТРЕНИРОВКИ (10 вариантов) ===
+# === ТРЕНИРОВКИ ===
 WORKOUTS = [
     {"name": "ГРУДЬ + БИЦЕПС", "muscles": "Грудные, Бицепс", "ex": ["Жим штанги 4x10", "Разводка гантелей 4x12", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Бег 20 мин"]},
     {"name": "СПИНА + ПЛЕЧИ", "muscles": "Спина, Плечи", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Велотренажёр 25 мин"]},
@@ -74,8 +74,7 @@ def delete_user(user_id):
         conn.commit()
     return True
 
-# === ОСНОВНЫЕ ФУНКЦИИ ===
-
+# === ФУНКЦИИ БОТА ===
 async def show_workout(message, user_id, date_str=None):
     user = get_user(user_id)
     if not user:
@@ -152,8 +151,6 @@ async def show_clients(message):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode="Markdown"
     )
-
-# === РЕГИСТРАЦИЯ ===
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -331,11 +328,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(get_welcome_text(), reply_markup=kb)
         return
 
-# === ЗАПУСК ===
-def main():
-    if not BOT_TOKEN:
-        print("❌ Ошибка: BOT_TOKEN не найден")
-        return
+def run_bot():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
@@ -345,5 +338,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
+    run_bot()
