@@ -8,7 +8,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from database import init_db, save_user, get_user, get_all_users, get_total_users, get_active_users_today, get_active_users_week
 from database import save_workout, get_today_workout, mark_workout_done, get_user_workouts, get_user_workouts_by_month
 
-# === ТОКЕН ===
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = int(os.environ.get('ADMIN_ID', 0))
 
@@ -18,7 +17,6 @@ if not BOT_TOKEN:
 
 logging.basicConfig(level=logging.INFO)
 
-# === ПРИВЕТСТВИЕ ===
 def get_welcome_text():
     return "Привет! Это твой тренер Энтони Тренболони! Ну что приступим к тренировкам?"
 
@@ -34,7 +32,6 @@ def clear_reg_data(user_id):
     if user_id in user_reg_data:
         del user_reg_data[user_id]
 
-# === КЛАВИАТУРЫ ===
 def get_client_keyboard():
     keyboard = [
         ["🏋️ Тренировка сегодня", "📅 Календарь"],
@@ -49,7 +46,6 @@ def get_admin_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# === ТРЕНИРОВКИ ===
 WORKOUTS = [
     {"name": "ГРУДЬ + БИЦЕПС", "muscles": "Грудные, Бицепс", "ex": ["Жим штанги 4x10", "Разводка гантелей 4x12", "Подъём штанги на бицепс 4x10", "Молотки 3x12", "Бег 20 мин"]},
     {"name": "СПИНА + ПЛЕЧИ", "muscles": "Спина, Плечи", "ex": ["Тяга штанги 4x10", "Тяга верхнего блока 4x12", "Жим гантелей сидя 4x10", "Разводка в стороны 3x12", "Велотренажёр 25 мин"]},
@@ -74,7 +70,6 @@ def delete_user(user_id):
         conn.commit()
     return True
 
-# === ФУНКЦИИ БОТА ===
 async def show_workout(message, user_id, date_str=None):
     user = get_user(user_id)
     if not user:
